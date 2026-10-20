@@ -1,0 +1,30 @@
+# secrets
+.env
+.env.*
+# local data (synthetic DB is rebuilt by data/build_db.py)
+*.db
+*.sqlite
+*.sqlite3
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+# new runs (keep the two committed examples)
+runs/*
+!runs/second-rental-example/
+!runs/faro-service-recovery-example/
+# editor / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+# personal notes, not part of the project
+prompt-*.md
+PROMPT-*.md
+# files written by watch.py
+triggers/state.json
+triggers/watch_log.jsonl
+triggers/alerts.md
+# local Claude Code config
+.claude/

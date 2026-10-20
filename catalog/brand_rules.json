@@ -1,0 +1,14 @@
+{
+  "_comment": "Brand and compliance rules checked by the CODE (src/tools.py -> check_copy). The agent reads them, but the linter decides what passes.",
+  "language": "en",
+  "max_subject_chars": 55,
+  "max_preheader_chars": 90,
+  "max_body_words": 90,
+  "forbidden_terms": ["free", "guaranteed", "cheapest", "best price", "act now", "!!!", "click here"],
+  "allowed_tokens": ["{{first_name}}", "{{last_city}}", "{{last_vehicle_class}}"],
+  "required_fields": ["variant", "hypothesis", "subject", "preheader", "body", "cta_label"],
+  "max_discount_pct": 15,
+  "tone": "Confident, premium, concise. No hype. Speak about the trip, not the car.",
+  "min_variants": 2,
+  "max_variants": 3
+}

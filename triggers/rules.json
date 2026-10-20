@@ -1,0 +1,35 @@
+{
+  "_comment": "Trigger rules. DETECTION is SQL (deterministic, cheap, auditable). The LLM only comes in AFTER a rule fires. Each row returned by the SQL = one trigger; the columns become {parameters} in the objective.",
+  "rules": [
+    {
+      "id": "low_ratings_spike",
+      "description": "Branch with at least 30% of ratings <= 2 in the last 7 days (minimum 15 ratings)",
+      "enabled": true,
+      "cooldown_days": 14,
+      "entity_column": "branch",
+      "detect_sql": "SELECT r.branch_city || ' ' || r.branch_type AS branch, r.branch_city AS city, r.branch_type AS branch_type, COUNT(*) AS n_ratings, ROUND(AVG(rr.score <= 2) * 100, 1) AS pct_low, (SELECT topic FROM rental_ratings x JOIN rentals y USING(rental_id) WHERE y.branch_city = r.branch_city AND y.branch_type = r.branch_type AND x.score <= 2 AND julianday('2026-10-19') - julianday(x.rated_at) <= 7 GROUP BY topic ORDER BY COUNT(*) DESC LIMIT 1) AS top_topic FROM rental_ratings rr JOIN rentals r USING (rental_id) WHERE julianday('2026-10-19') - julianday(rr.rated_at) <= 7 GROUP BY r.branch_city, r.branch_type HAVING COUNT(*) >= 15 AND AVG(rr.score <= 2) >= 0.30",
+      "actions": [
+        {"type": "alert",
+         "message": "Low-rating spike at {branch}: {pct_low}% of {n_ratings} ratings (main topic: {top_topic})."},
+        {"type": "campaign",
+         "min_segment_size": 5,
+         "ab_test": false,
+         "replay_file": "replay/service_recovery.json",
+         "objective": "Service-recovery campaign: customers who rated a rental at the {city} ({branch_type}) branch <= 2 in the last 7 days. The main complaint topic is '{top_topic}'. Goal: apologise without an aggressive discount and win back trust for a next rental."}
+      ]
+    },
+    {
+      "id": "first_rental_pool_ready",
+      "description": "At least 1500 first-rental customers who returned the car 30-180 days ago (pool big enough for an A/B test)",
+      "enabled": true,
+      "cooldown_days": 7,
+      "entity_column": "pool",
+      "detect_sql": "SELECT pool, n FROM (SELECT 'first_rental_30_180d' AS pool, COUNT(*) AS n FROM (SELECT customer_id FROM rentals GROUP BY customer_id HAVING COUNT(*) = 1 AND julianday('2026-10-19') - julianday(MAX(return_date)) BETWEEN 30 AND 180)) WHERE n >= 1500",
+      "actions": [
+        {"type": "campaign",
+         "replay_file": "replay/second_rental.json",
+         "objective": "Turn first-rental customers into a second rental. Focus on people who returned the car 1 to 3 months ago; we also want to push app adoption."}
+      ]
+    }
+  ]
+}

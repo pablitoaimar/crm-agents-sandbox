@@ -1,0 +1,59 @@
+{
+  "_comment": "Model replies RECORDED for the service-recovery objective fired by the low_ratings_spike rule (Faro airport). The tools run for real.",
+  "agents": {
+    "segmentation": [
+      [
+        {"text": "Service-recovery trigger. I will check the catalogue for where the ratings live and how they link to the branch."},
+        {"tool": "get_catalog"}
+      ],
+      [
+        {"text": "Ratings are in rental_ratings; the branch comes from rentals. I will check the volume before submitting."},
+        {"tool": "run_sql", "input": {"sql": "SELECT rr.score, COUNT(*) AS n\nFROM rental_ratings rr\nJOIN rentals r ON r.rental_id = rr.rental_id\nWHERE r.branch_city = 'Faro' AND r.branch_type = 'airport'\n  AND julianday(date('2026-10-19')) - julianday(rr.rated_at) <= 7\nGROUP BY rr.score\nORDER BY rr.score"}}
+      ],
+      [
+        {"text": "10 ratings with score <= 2. Submitting the segment; I include the score for reference."},
+        {"tool": "submit_segment", "input": {
+          "name": "faro_airport_low_rating_7d",
+          "sql": "SELECT rr.customer_id, rr.score\nFROM rental_ratings rr\nJOIN rentals r ON r.rental_id = rr.rental_id\nWHERE r.branch_city = 'Faro' AND r.branch_type = 'airport'\n  AND rr.score <= 2\n  AND julianday(date('2026-10-19')) - julianday(rr.rated_at) <= 7",
+          "rationale": "Customers who gave a 1 or 2 at Faro airport in the last week."}}
+      ],
+      [
+        {"text": "Rejected: the contract requires customer_id only. I drop the score column and use DISTINCT, because a customer may have rated more than one rental."},
+        {"tool": "submit_segment", "input": {
+          "name": "faro_airport_low_rating_7d",
+          "sql": "SELECT DISTINCT rr.customer_id\nFROM rental_ratings rr\nJOIN rentals r ON r.rental_id = rr.rental_id\nWHERE r.branch_city = 'Faro' AND r.branch_type = 'airport'\n  AND rr.score <= 2\n  AND julianday(date('2026-10-19')) - julianday(rr.rated_at) <= 7",
+          "rationale": "Customers who rated a rental at Faro airport 1 or 2 in the last 7 days. Small by nature: this is a recovery action, not a growth one, so I did not widen the criteria."}}
+      ]
+    ],
+    "content": [
+      [
+        {"text": "Reading the profile and the brand rules."},
+        {"tool": "get_segment_profile"},
+        {"tool": "get_brand_rules"}
+      ],
+      [
+        {"text": "Six customers, main complaint waiting time. The tone has to be a specific apology, no overstatement. First draft:"},
+        {"tool": "check_copy", "input": {"variant": {
+          "variant": "A",
+          "hypothesis": "A specific apology naming the problem rebuilds trust better than a generic one.",
+          "subject": "We kept you waiting in Faro. We are sorry.",
+          "preheader": "Here is what we changed, and a small thank-you.",
+          "body": "Hi {{first_name}}, your last pickup at Faro airport took far longer than it should have. We have added staff at the counter for the coming weeks. Next time, it is guaranteed to be fast, and 10% of your next rental is on us.",
+          "cta_label": "See my offer"}}}
+      ],
+      [
+        {"text": "The linter rejected 'guaranteed'. Fair: we cannot promise that. I replace it with a verifiable statement and submit."},
+        {"tool": "submit_variants", "input": {"variants": [
+          {
+            "variant": "A",
+            "hypothesis": "A specific apology naming the problem rebuilds trust better than a generic one.",
+            "subject": "We kept you waiting in Faro. We are sorry.",
+            "preheader": "Here is what we changed, and a small thank-you.",
+            "body": "Hi {{first_name}}, your last pickup at Faro airport took far longer than it should have. We have added staff at the counter for the coming weeks, and you can now skip the queue by checking in through the app. As a thank-you for your patience, 10% of your next rental is on us.",
+            "cta_label": "See my offer"
+          }
+        ]}}
+      ]
+    ]
+  }
+}

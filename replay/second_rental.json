@@ -1,0 +1,75 @@
+{
+  "_comment": "Model replies RECORDED for the default objective. The tools run for real against the database; only the model's decisions come from here. Each agent makes one mistake on purpose so you can see the reject -> fix cycle.",
+  "agents": {
+    "segmentation": [
+      [
+        {"text": "Before writing SQL, I will read the catalogue to confirm how 'first rental' is defined and which columns exist."},
+        {"tool": "get_catalog"}
+      ],
+      [
+        {"text": "First rental = exactly 1 row in rentals. I will count these customers by how long ago they returned the car and by whether they have the app, to see how big each slice is."},
+        {"tool": "run_sql", "input": {"sql": "SELECT CASE WHEN d <= 90 THEN '030-090' WHEN d <= 180 THEN '091-180' ELSE '181+' END AS bucket,\n       c.has_app,\n       COUNT(*) AS n\nFROM (\n    SELECT customer_id,\n           julianday(date('2026-10-19')) - julianday(MAX(return_date)) AS d\n    FROM rentals\n    GROUP BY customer_id\n    HAVING COUNT(*) = 1\n) f\nJOIN customers c USING (customer_id)\nWHERE d >= 30\nGROUP BY 1, 2\nORDER BY 1, 2"}}
+      ],
+      [
+        {"text": "The objective says 1 to 3 months and app adoption. First attempt: only people without the app, returned 30-90 days ago. That is 518 before exclusions; it may come up short, but it is the closest match to the request."},
+        {"tool": "submit_segment", "input": {
+          "name": "first_rental_30_90d_no_app",
+          "sql": "SELECT r.customer_id\nFROM rentals r\nJOIN customers c ON c.customer_id = r.customer_id\nWHERE c.has_app = 0\n  AND r.customer_id IN (SELECT customer_id FROM rentals GROUP BY customer_id HAVING COUNT(*) = 1)\n  AND julianday(date('2026-10-19')) - julianday(r.return_date) BETWEEN 30 AND 90",
+          "rationale": "Customers with a single rental, returned 30-90 days ago, without the app. This is the slice closest to the request."}}
+      ],
+      [
+        {"text": "Rejected: after consent and fatigue 340 remain, below the minimum of 600 for an A/B test. I have two levers: widen the window or include people with the app. Including app users even helps the test (I can compare), and widening to 180 days keeps customers still 'warm'. I will do both and leave has_app as a dimension for the content, not as a filter."},
+        {"tool": "submit_segment", "input": {
+          "name": "first_rental_30_180d",
+          "sql": "SELECT r.customer_id\nFROM rentals r\nWHERE r.customer_id IN (SELECT customer_id FROM rentals GROUP BY customer_id HAVING COUNT(*) = 1)\n  AND julianday(date('2026-10-19')) - julianday(r.return_date) BETWEEN 30 AND 180",
+          "rationale": "Customers with a single rental returned 30-180 days ago. I widened from 90 to 180 days and included people who already have the app, because the no-app 90-day slice gave 340 after exclusions, not enough to test. App adoption is now handled in the content, not in the filter."}}
+      ]
+    ],
+    "content": [
+      [
+        {"text": "I need to understand who is in the segment and what the brand rules are. I will ask for both at once."},
+        {"tool": "get_segment_profile"},
+        {"tool": "get_brand_rules"}
+      ],
+      [
+        {"text": "Profile: ~1.2k customers, 60% without the app, 60% picked up at an airport, mostly economy/compact, booked mostly on the web. Hypotheses: (A) a simple reminder as baseline; (B) personalising with the last city adds relevance; (C) an app-only incentive converts and pushes adoption. First draft of C:"},
+        {"tool": "check_copy", "input": {"variant": {
+          "variant": "C",
+          "hypothesis": "An app-only incentive drives the second rental and app adoption.",
+          "subject": "20% off your next trip + a free upgrade, only in the app",
+          "preheader": "Book your second rental in our app.",
+          "body": "Hi {{first_name}}, your next trip deserves a head start. Download the app and save on your second rental.",
+          "cta_label": "Get the app"}}}
+      ],
+      [
+        {"text": "The linter caught three problems: subject too long, 20% above the 15% maximum, and the term 'free'. I change it to 10%, drop the upgrade and shorten it. Submitting the three variants."},
+        {"tool": "submit_variants", "input": {"variants": [
+          {
+            "variant": "A",
+            "hypothesis": "Baseline: a plain brand reminder with no incentive or personalisation.",
+            "subject": "Ready for your next trip, {{first_name}}?",
+            "preheader": "Your next car is a few taps away.",
+            "body": "Hi {{first_name}}, thanks for travelling with us. Wherever you are heading next, we have a car ready at branches across Europe. Pick it up at the airport or in town, and get on the road in minutes.",
+            "cta_label": "Plan my next trip"
+          },
+          {
+            "variant": "B",
+            "hypothesis": "Referencing the last city and car class makes the message feel relevant and lifts conversion.",
+            "subject": "{{first_name}}, back to {{last_city}} soon?",
+            "preheader": "Your {{last_vehicle_class}} is ready when you are.",
+            "body": "Hi {{first_name}}, last time you picked up a {{last_vehicle_class}} in {{last_city}}. Heading back, or somewhere new? Book in under a minute and pick up right where you left off.",
+            "cta_label": "Book my next car"
+          },
+          {
+            "variant": "C",
+            "hypothesis": "An app-only incentive drives the second rental and app adoption.",
+            "subject": "10% off your second trip, in the app",
+            "preheader": "Book your next rental in our app and save.",
+            "body": "Hi {{first_name}}, your next trip deserves a head start. Book your second rental in our app and save 10%. Manage your booking, skip the counter and unlock your car from your phone.",
+            "cta_label": "Get the app"
+          }
+        ]}}
+      ]
+    ]
+  }
+}

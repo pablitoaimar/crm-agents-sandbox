@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CRM Agents Sandbox</title>
+<meta name="description" content="Run viewer for a CRM agents prototype: AI agents propose, code checks, a human approves, statistics measure. Synthetic data, simulated send.">
+<style>
+:root {
+  --bg: #f7f7f5; --card: #ffffff; --text: #1d1d1f; --muted: #5f6368; --line: #e2e2de;
+  --agent: #6b4fd8; --agent-bg: #efebff;
+  --code: #0f7a6c; --code-bg: #e3f4f1;
+  --human: #a35a00; --human-bg: #fff1dc;
+  --no: #c62828; --no-bg: #fdecea;
+  --yes: #2e7d32; --yes-bg: #e8f5e9;
+  --warn-bg: #fff4c2; --warn-line: #e0c040;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161618; --card: #202023; --text: #ececec; --muted: #a2a2a8; --line: #36363b;
+    --agent: #a996ff; --agent-bg: #2b2547;
+    --code: #4fd1bd; --code-bg: #15332f;
+    --human: #ffb45c; --human-bg: #3d2a12;
+    --no: #ff7b72; --no-bg: #3d1d1b;
+    --yes: #7ee08a; --yes-bg: #1c3320;
+    --warn-bg: #3a3212; --warn-line: #8a7520;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.wrap { max-width: 880px; margin: 0 auto; padding: 0 16px 48px; }
+.banner { background: var(--warn-bg); border-bottom: 2px solid var(--warn-line);
+  padding: 10px 16px; text-align: center; font-weight: 600; font-size: 15px; }
+h1 { font-size: 26px; line-height: 1.2; margin: 24px 0 6px; }
+h2 { font-size: 19px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+h3 { font-size: 16px; margin: 14px 0 6px; }
+p { margin: 6px 0; }
+.lead { color: var(--muted); margin: 0 0 18px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin: 14px 0; }
+.muted { color: var(--muted); }
+.small { font-size: 14px; }
+pre, code { font-family: var(--mono); font-size: 13px; }
+pre { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px;
+  overflow-x: auto; white-space: pre-wrap; word-break: break-word; margin: 6px 0; }
+
+/* who decides */
+.tag { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.tag.agent { color: var(--agent); background: var(--agent-bg); }
+.tag.code { color: var(--code); background: var(--code-bg); }
+.tag.human { color: var(--human); background: var(--human-bg); }
+.tag.no { color: var(--no); background: var(--no-bg); }
+.tag.yes { color: var(--yes); background: var(--yes-bg); }
+.steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.steps li { display: grid; grid-template-columns: 26px 1fr; gap: 8px; align-items: start; }
+.steps .n { font-weight: 700; color: var(--muted); text-align: right; }
+.steps .what { font-weight: 600; }
+.legend { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 0; font-size: 14px; }
+
+/* picker */
+.picker { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.picker button { font: inherit; font-size: 15px; padding: 8px 12px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--card); color: var(--text); }
+.picker button[aria-pressed="true"] { border-color: var(--text); font-weight: 600; }
+.drop { margin-top: 10px; border: 2px dashed var(--line); border-radius: 8px; padding: 12px; text-align: center;
+  color: var(--muted); font-size: 14px; }
+.drop.over { border-color: var(--agent); background: var(--agent-bg); }
+.drop label { color: var(--text); text-decoration: underline; cursor: pointer; }
+
+/* summary */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 10px 0; }
+.kpi { border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--card); }
+.kpi b { display: block; font-size: 22px; line-height: 1.2; }
+.kpi span { font-size: 13px; color: var(--muted); }
+.nolist { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.nolist li { border-left: 4px solid var(--no); background: var(--no-bg); border-radius: 6px; padding: 8px 10px; }
+.nolist .ask { font-size: 14px; }
+.nolist .why { font-weight: 600; color: var(--no); }
+.nolist .fix { font-size: 14px; margin-top: 2px; }
+
+/* funnel + groups */
+.bar { display: grid; grid-template-columns: minmax(110px, 38%) 1fr; gap: 8px; align-items: center; margin: 4px 0; font-size: 14px; }
+.bar .track { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; height: 22px; position: relative; }
+.bar .fill { height: 100%; border-radius: 3px; background: var(--code); opacity: .85; }
+.bar .fill.agent { background: var(--agent); }
+.bar .fill.hold { background: var(--muted); }
+.bar .val { position: absolute; left: 6px; top: 1px; font-weight: 700; font-size: 13px; color: var(--text);
+  text-shadow: 0 0 3px var(--card); }
+
+/* variants */
+.variants { display: grid; gap: 10px; }
+.variant { border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+.variant .head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center; }
+.variant .subj { font-weight: 700; }
+.variant .body { font-size: 14px; margin: 6px 0; }
+.variant dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 14px; margin: 6px 0; }
+.variant dt { color: var(--muted); }
+.variant dd { margin: 0; }
+.draft { border-left: 4px solid var(--no); background: var(--no-bg); padding: 6px 10px; border-radius: 6px; margin-top: 8px; font-size: 14px; }
+.draft ul { margin: 4px 0 0 18px; padding: 0; color: var(--no); font-weight: 600; }
+
+/* results table */
+.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tbl th, .tbl td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: right; }
+.tbl th:first-child, .tbl td:first-child { text-align: left; }
+.tblwrap { overflow-x: auto; }
+.verdict { padding: 10px 12px; border-radius: 8px; margin: 10px 0; font-weight: 600; }
+.verdict.inc { background: var(--human-bg); color: var(--human); }
+.verdict.sig { background: var(--yes-bg); color: var(--yes); }
+.verdict.na { background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+
+/* timeline */
+.tl { list-style: none; padding: 0; margin: 0; }
+.tl li { border-left: 3px solid var(--line); padding: 6px 0 10px 12px; margin-left: 4px; position: relative; }
+.tl li::before { content: ""; position: absolute; left: -7px; top: 12px; width: 11px; height: 11px; border-radius: 50%;
+  background: var(--card); border: 2px solid var(--line); }
+.tl li.agent { border-left-color: var(--agent); } .tl li.agent::before { border-color: var(--agent); }
+.tl li.code { border-left-color: var(--code); } .tl li.code::before { border-color: var(--code); }
+.tl li.human { border-left-color: var(--human); } .tl li.human::before { border-color: var(--human); }
+.tl li.no { border-left-color: var(--no); background: var(--no-bg); border-radius: 0 6px 6px 0; }
+.tl li.no::before { border-color: var(--no); background: var(--no); }
+.tl li.stage { padding-top: 14px; }
+.tl li.stage .title { font-weight: 700; }
+.tl .who { margin-right: 6px; }
+.tl .txt { font-size: 15px; }
+.tl .think { font-style: italic; color: var(--muted); font-size: 14px; }
+.tl .reason { color: var(--no); font-weight: 700; }
+.tl details { margin-top: 4px; font-size: 14px; }
+.tl summary { cursor: pointer; color: var(--muted); }
+.toggle { font-size: 14px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.hideok .tl li:not(.no):not(.stage):not(.pair) { display: none; }
+footer { color: var(--muted); font-size: 14px; margin-top: 28px; }
+a { color: inherit; }
+</style>
+</head>
+<body>
+<div class="banner" role="note">Demo on synthetic data. The email send is simulated: nothing reached real people. Not a production system.</div>
+<div class="wrap">
+  <h1>CRM agents sandbox: run viewer</h1>
+  <p class="lead">Two AI agents plan a CRM email campaign for a fictional car rental company. The agents propose. Code checks every request and can say no. A person approves before anything is sent. Statistics measure the result.</p>
+
+  <section class="card" aria-labelledby="who">
+    <h2 id="who">Who decides what</h2>
+    <ol class="steps">
+      <li><span class="n">1</span><span><span class="what">Segment</span> · <span class="tag agent">Agent</span> proposes the audience in SQL, <span class="tag code">Code</span> checks it</span></li>
+      <li><span class="n">2</span><span><span class="what">Exclusions</span> · <span class="tag code">Code</span> removes people without consent or contacted in the last 7 days</span></li>
+      <li><span class="n">3</span><span><span class="what">Email copy</span> · <span class="tag agent">Agent</span> writes variants, <span class="tag code">Code</span> brand linter checks them</span></li>
+      <li><span class="n">4</span><span><span class="what">A/B plan</span> · <span class="tag code">Code</span> random split + 10% holdout that gets nothing</span></li>
+      <li><span class="n">5</span><span><span class="what">Approval</span> · <span class="tag human">Human</span> reads the plan and says yes or no</span></li>
+      <li><span class="n">6</span><span><span class="what">Send</span> · <span class="tag code">Code</span> simulated here</span></li>
+      <li><span class="n">7</span><span><span class="what">Evaluation</span> · <span class="tag code">Code</span> significance test against the holdout</span></li>
+    </ol>
+  </section>
+
+  <section class="card" aria-labelledby="pick">
+    <h2 id="pick">Pick a run</h2>
+    <div class="picker" id="picker"></div>
+    <div class="drop" id="drop">Or drop a <code>trace.jsonl</code> from your own run here, or <label for="file">choose a file</label>.
+      <input type="file" id="file" accept=".jsonl,.json,.txt" hidden></div>
+    <p class="small muted" id="loaded"></p>
+  </section>
+
+  <div id="run"></div>
+
+  <footer>
+    Source and how to run it yourself: see the repository README. Customer data, ratings and outcomes are generated by a script; the conversion effect of each email is a toy model.
+  </footer>
+</div>
+
+<script src="data/runs.js"></script>
+<script>
+"use strict";
+const theme = new URLSearchParams(location.search).get("theme");
+if (theme === "light") document.documentElement.dataset.theme = theme;
+const ROLE = { 1: "agent", 2: "code", 3: "agent", 4: "code", 5: "human", 6: "code", 7: "code" };
+const ROLE_LABEL = { agent: "Agent", code: "Code", human: "Human" };
+const AGENT_LABEL = { segmentation: "Segmentation agent", content: "Content agent" };
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const tag = role => `<span class="tag ${role}">${ROLE_LABEL[role] || esc(role)}</span>`;
+const fmt = n => Number(n).toLocaleString("en-US");
+const isRejected = out => !!out && typeof out === "object" && !Array.isArray(out) && (out.ok === false || "error" in out);
+const stageNum = title => parseInt(String(title), 10);
+const stripMd = s => String(s).replace(/\*\*/g, "").replace(/^\*|\*$/g, "");
+
+function rejectionReasons(out) {
+  const r = [];
+  if (out.error) r.push(out.error);
+  if (Array.isArray(out.problems)) r.push(...out.problems);
+  else if (out.problems && typeof out.problems === "object")
+    for (const [v, ps] of Object.entries(out.problems)) ps.forEach(p => r.push(`Variant ${v}: ${p}`));
+  return r;
+}
+
+/* ---------- turn raw trace events into what the page shows ---------- */
+function normalize(events, name) {
+  const stages = {};
+  events.filter(e => e.kind === "stage").forEach(e => { stages[stageNum(e.title)] = e; });
+  const results = events.filter(e => e.kind === "tool_result");
+  const run = { name, events, stages };
+
+  run.objective = (stages[1]?.detail || "").replace(/^(Objective|Objetivo):\s*/i, "");
+  if (!run.objective) {
+    const start = events.find(e => e.kind === "agent_start");
+    run.objective = start ? start.task.split("\n")[0].replace(/^[^:]+:\s*/, "") : "";
+  }
+
+  const segs = results.filter(e => e.tool === "submit_segment");
+  run.segAccepted = [...segs].reverse().find(e => !isRejected(e.output)) || null;
+  run.segRejected = segs.filter(e => isRejected(e.output));
+  const fd = (stages[2]?.detail || "").match(/\((\d+)\s*(?:days|dias)\)/);
+  run.fatigueDays = fd ? +fd[1] : 7;
+
+  const subs = results.filter(e => e.tool === "submit_variants");
+  const okSub = [...subs].reverse().find(e => !isRejected(e.output));
+  run.variants = okSub ? okSub.input.variants : [];
+  run.drafts = [];
+  results.filter(e => e.tool === "check_copy" && isRejected(e.output)).forEach(e =>
+    run.drafts.push({ variant: e.input?.variant?.variant || "?", draft: e.input?.variant || {}, problems: rejectionReasons(e.output) }));
+  subs.filter(e => isRejected(e.output)).forEach(e => {
+    const p = e.output.problems;
+    if (p && typeof p === "object" && !Array.isArray(p))
+      for (const [v, ps] of Object.entries(p)) {
+        const d = (e.input.variants || []).find(x => x.variant === v) || {};
+        run.drafts.push({ variant: v, draft: d, problems: ps });
+      }
+    else run.drafts.push({ variant: "all", draft: {}, problems: rejectionReasons(e.output) });
+  });
+
+  const g = (stages[4]?.detail || "").match(/(?:Groups|Grupos):\s*([^\n]*)/);
+  run.groups = g ? g[1].split(/,\s*/).map(x => x.split("=")).filter(x => x.length === 2).map(([k, v]) => ({ k, v: +v })) : [];
+  run.approved = !!stages[5] && !!stages[6];
+  const sent = (stages[6]?.detail || "").match(/(\d+)\s+(?:rows|linhas)/);
+  run.sentRows = sent ? +sent[1] : null;
+
+  run.eval = parseEval(stages[7]?.detail || "");
+  run.requests = results.length;
+  run.rejections = results.filter(e => isRejected(e.output));
+  return run;
+}
+
+function parseEval(md) {
+  if (!md) return null;
+  const lines = md.split("\n");
+  const rows = lines.filter(l => l.trim().startsWith("|")).map(l => l.trim().replace(/^\||\|$/g, "").split("|").map(s => s.trim()));
+  const header = rows[0] || [];
+  const body = rows.slice(2);
+  const best = md.match(/\*\*(?:Best variant|Melhor variante):\*\*\s*([^\s(]+)/);
+  const need = md.match(/~(\d+)/g);
+  let verdict = "na";
+  if (/inconclusive|inconclusivo/i.test(md)) verdict = "inc";
+  else if (/statistically significant|estatisticamente significativa/i.test(md)) verdict = "sig";
+  const notes = lines.filter(l => l.trim() && !l.trim().startsWith("|") && !l.startsWith("#")
+    && !/^\*\*(Best|Melhor|Statistical|Poder)/.test(l) && !/^(Conclusion|Conclusao)/.test(l)).map(stripMd);
+  return { header, body, hasHoldout: body.some(r => r[0] === "HOLDOUT"), best: best ? best[1] : null,
+    needed: need && need.length >= 2 ? +need[0].slice(1) : null, perGroup: need && need.length >= 2 ? +need[1].slice(1) : null,
+    verdict, notes };
+}
+
+/* ---------- short descriptions of tool calls ---------- */
+const TOOL_ASK = {
+  get_catalog: () => "asks to read the data catalogue",
+  run_sql: () => "asks to run a read-only SQL query",
+  submit_segment: i => `submits segment <b>${esc(i.name)}</b>`,
+  get_segment_profile: () => "asks for the profile of the approved segment",
+  get_brand_rules: () => "asks for the brand rules",
+  check_copy: i => `asks the linter to check variant <b>${esc(i.variant?.variant)}</b>: “${esc(i.variant?.subject)}”`,
+  submit_variants: i => `submits ${(i.variants || []).length} variant(s): ${(i.variants || []).map(v => esc(v.variant)).join(", ")}`,
+};
+function describeOk(e) {
+  const o = e.output;
+  switch (e.tool) {
+    case "get_catalog": return "returns the catalogue";
+    case "run_sql": return `returns ${o.rows?.length ?? 0} row(s)`;
+    case "submit_segment": return `accepts: ${fmt(o.funnel.after_fatigue)} customers after exclusions`;
+    case "get_segment_profile": return `returns profile: ${fmt(o.size)} customers, ${o.has_app_pct}% with the app, ${o.airport_share_pct}% last picked up at an airport`;
+    case "get_brand_rules": return "returns the brand rules";
+    case "check_copy": return "passes the brand linter";
+    case "submit_variants": return "accepts the variants";
+    default: return o?.message || "ok";
+  }
+}
+function inputDetails(e) {
+  const i = e.input || {};
+  if (i.sql) return `<details><summary>SQL</summary><pre>${esc(i.sql)}</pre></details>`;
+  if (Object.keys(i).length) return `<details><summary>Request</summary><pre>${esc(JSON.stringify(i, null, 2))}</pre></details>`;
+  return "";
+}
+function outputDetails(e) {
+  const o = e.output;
+  if (e.tool === "get_catalog" || e.tool === "get_brand_rules" || e.tool === "run_sql" || e.tool === "get_segment_profile")
+    return `<details><summary>Response</summary><pre>${esc(typeof o === "string" ? o : JSON.stringify(o, null, 1))}</pre></details>`;
+  return "";
+}
+
+/* ---------- render ---------- */
+function render(run) {
+  const el = document.getElementById("run");
+  const h = [];
+  const agentAsks = run.events.filter(e => e.kind === "model_turn")
+    .reduce((n, e) => n + e.reply.content.filter(b => b.type === "tool_use").length, 0);
+
+  // Summary
+  h.push(`<section class="card"><h2>What happened in this run</h2>
+    <p><b>Objective given to the agents:</b> ${esc(run.objective)}</p>
+    <div class="kpis">
+      <div class="kpi"><b>${agentAsks}</b><span>requests made by the agents</span></div>
+      <div class="kpi"><b style="color:var(--no)">${run.rejections.length}</b><span>refused by the code</span></div>
+      <div class="kpi"><b>${run.approved ? "Passed" : "Stopped"}</b><span>approval gate before sending</span></div>
+      <div class="kpi"><b>${run.eval ? verdictShort(run.eval) : "—"}</b><span>measured result</span></div>
+    </div>
+    ${run.rejections.length ? `<h3>Where the code said no</h3><ul class="nolist">${run.rejections.map(e => {
+      const fix = nextAccepted(run, e);
+      return `<li><div class="ask">${esc(AGENT_LABEL[e.agent] || e.agent)} ${TOOL_ASK[e.tool] ? TOOL_ASK[e.tool](e.input || {}) : esc(e.tool)}</div>
+        <div class="why">Code: ${rejectionReasons(e.output).map(esc).join("; ")}</div>
+        ${fix ? `<div class="fix">The agent fixed it and resubmitted at step ${fix.step}: accepted.</div>` : ""}</li>`;
+    }).join("")}</ul>` : `<p class="muted">The code did not refuse anything in this run.</p>`}
+  </section>`);
+
+  // 1+2 Segment
+  if (run.segAccepted) {
+    const s = run.segAccepted.input, f = run.segAccepted.output.funnel;
+    const max = f.proposed || 1;
+    h.push(`<section class="card"><h2>1–2 · Segment ${tag("agent")} ${tag("code")}</h2>
+      <p><b>${esc(s.name)}</b></p>
+      <p><span class="muted">Agent's reasoning:</span> ${esc(s.rationale)}</p>
+      <details><summary>Agent's SQL</summary><pre>${esc(s.sql)}</pre></details>
+      <h3>Exclusions applied by the code (the agent does not write these)</h3>
+      ${bar("Proposed by the agent", f.proposed, max, "agent")}
+      ${bar("With email consent", f.after_consent, max)}
+      ${bar(`Not contacted in last ${run.fatigueDays} days`, f.after_fatigue, max)}
+      <p class="small muted">Removed by the code: ${fmt(f.proposed - f.after_consent)} without consent, ${fmt(f.after_consent - f.after_fatigue)} contacted recently.
+      ${run.segRejected.length ? `The agent's earlier ${run.segRejected.length === 1 ? "attempt was" : run.segRejected.length + " attempts were"} refused (see above).` : ""}</p>
+    </section>`);
+  }
+
+  // 3 Content
+  if (run.variants.length) {
+    h.push(`<section class="card"><h2>3 · Email copy ${tag("agent")} ${tag("code")}</h2>
+      <p class="small muted">Each variant tests one hypothesis. Every variant must pass the brand linter: length limits, forbidden words, maximum discount, allowed personalisation fields.</p>
+      <div class="variants">${run.variants.map(v => {
+        const drafts = run.drafts.filter(d => d.variant === v.variant || d.variant === "all");
+        return `<div class="variant"><div class="head"><span><b>Variant ${esc(v.variant)}</b></span><span class="tag yes">Passed linter</span></div>
+          <p class="small"><span class="muted">Hypothesis:</span> ${esc(v.hypothesis)}</p>
+          <dl><dt>Subject</dt><dd class="subj">${esc(v.subject)}</dd><dt>Preheader</dt><dd>${esc(v.preheader)}</dd><dt>Button</dt><dd>${esc(v.cta_label)}</dd></dl>
+          <p class="body">${esc(v.body)}</p>
+          ${drafts.map(d => `<div class="draft"><b>Earlier draft refused by the linter</b>${d.draft.subject ? `: “${esc(d.draft.subject)}”` : ""}
+            <ul>${d.problems.map(p => `<li>${esc(p)}</li>`).join("")}</ul></div>`).join("")}
+        </div>`;
+      }).join("")}</div></section>`);
+  }
+
+  // 4 A/B plan
+  if (run.groups.length) {
+    const total = run.groups.reduce((a, g) => a + g.v, 0);
+    const hold = run.groups.find(g => g.k === "HOLDOUT");
+    h.push(`<section class="card"><h2>4 · A/B plan ${tag("code")}</h2>
+      ${run.groups.map(g => bar(g.k === "HOLDOUT" ? "Holdout (gets nothing)" : `Variant ${g.k}`, g.v, total, g.k === "HOLDOUT" ? "hold" : "")).join("")}
+      <p class="small muted">${hold
+        ? `Customers are shuffled with a fixed seed and split evenly. ${Math.round(hold.v / total * 100)}% are held out and receive nothing, so the test can measure what would have happened anyway.`
+        : "No A/B test: the segment is too small (a service-recovery campaign). One variant, no holdout."}</p>
+    </section>`);
+  }
+
+  // 5 + 6
+  h.push(`<section class="card"><h2>5 · Approval ${tag("human")}</h2>
+    <p>${run.approved ? "The plan (segment, exclusions, variants, split) was approved before sending." : "The run stopped before sending: no approval was recorded."}</p>
+    <p class="small muted">In a normal run the pipeline stops here and waits for a person to type “y”. The example runs on this page were approved with the <code>--yes</code> flag so they could be recorded.</p>
+  </section>
+  <section class="card"><h2>6 · Send ${tag("code")} <span class="tag no">Simulated</span></h2>
+    <p>${run.sentRows != null ? `${fmt(run.sentRows)} customers assigned (including holdout).` : "Not sent."} No email left the machine. Opens, clicks and bookings are generated by a toy model in the code.</p>
+  </section>`);
+
+  // 7 Evaluation
+  if (run.eval) h.push(renderEval(run.eval));
+
+  // Timeline
+  h.push(renderTimeline(run));
+  el.innerHTML = h.join("");
+  const t = document.getElementById("onlyNo");
+  if (t) t.addEventListener("change", () => document.getElementById("tlwrap").classList.toggle("hideok", t.checked));
+}
+
+function nextAccepted(run, rej) {
+  return run.events.find(e => e.kind === "tool_result" && e.agent === rej.agent && e.tool === (rej.tool === "check_copy" ? "submit_variants" : rej.tool)
+    && e.step > rej.step && !isRejected(e.output)) || null;
+}
+function verdictShort(ev) {
+  if (!ev.hasHoldout) return "No test";
+  return ev.verdict === "inc" ? "Inconclusive" : ev.verdict === "sig" ? "Significant" : "—";
+}
+function bar(label, v, max, cls = "") {
+  const w = Math.max(2, Math.round(v / max * 100));
+  return `<div class="bar"><span>${esc(label)}</span><span class="track"><span class="fill ${cls}" style="width:${w}%;display:block"></span><span class="val">${fmt(v)}</span></span></div>`;
+}
+
+function renderEval(ev) {
+  const head = ev.header.map(c => `<th>${esc(c)}</th>`).join("");
+  const rows = ev.body.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join("")}</tr>`).join("");
+  let verdict;
+  if (!ev.hasHoldout) verdict = `<div class="verdict na">No significance test: the segment is too small and has no holdout. Success here is measured on service (did the branch fix the problem, did ratings recover), not on the copy.</div>`;
+  else if (ev.verdict === "inc") verdict = `<div class="verdict inc">Inconclusive. The code does not declare a winner.</div>`;
+  else verdict = `<div class="verdict sig">Statistically significant difference (p &lt; 0.05).</div>`;
+  const power = ev.needed && ev.perGroup
+    ? `<p>To detect a 30% relative lift, the test needs about <b>${fmt(ev.needed)}</b> customers per group. It has about <b>${fmt(ev.perGroup)}</b>. That is why the result cannot be trusted yet: send to more people over several weeks, or measure a more frequent action such as clicks.</p>` : "";
+  const best = ev.best && ev.hasHoldout ? `<p class="small muted">Best-looking variant: ${esc(ev.best)}. Each variant is compared with the holdout using a two-proportion z-test.</p>` : "";
+  return `<section class="card"><h2>7 · Evaluation ${tag("code")}</h2>
+    ${verdict}<div class="tblwrap"><table class="tbl"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>
+    ${best}${power}</section>`;
+}
+
+function renderTimeline(run) {
+  const items = [];
+  const reqs = {};
+  for (const e of run.events) {
+    if (e.kind === "stage") {
+      const n = stageNum(e.title), role = ROLE[n] || "code";
+      items.push(`<li class="stage ${role}"><span class="who">${tag(role)}</span><span class="title">${esc(e.title)}</span></li>`);
+    } else if (e.kind === "model_turn") {
+      for (const b of e.reply.content) {
+        if (b.type === "text" && b.text.trim())
+          items.push(`<li class="agent"><span class="who">${tag("agent")}</span><span class="think">${esc(AGENT_LABEL[e.agent] || e.agent)} thinks: “${esc(b.text)}”</span></li>`);
+      }
+    } else if (e.kind === "tool_result") {
+      const ask = TOOL_ASK[e.tool] ? TOOL_ASK[e.tool](e.input || {}) : `calls ${esc(e.tool)}`;
+      items.push(`<li class="agent${isRejected(e.output) ? " pair" : ""}"><span class="who">${tag("agent")}</span><span class="txt">Step ${e.step}: ${esc(AGENT_LABEL[e.agent] || e.agent)} ${ask}</span>${inputDetails(e)}</li>`);
+      if (isRejected(e.output))
+        items.push(`<li class="no"><span class="who"><span class="tag no">Code: no</span></span><span class="reason">${rejectionReasons(e.output).map(esc).join("; ")}</span></li>`);
+      else
+        items.push(`<li class="code"><span class="who">${tag("code")}</span><span class="txt">${esc(describeOk(e))}</span>${outputDetails(e)}</li>`);
+    } else if (e.kind === "agent_end") {
+      items.push(`<li class="code"><span class="who">${tag("code")}</span><span class="txt small">${esc(AGENT_LABEL[e.agent] || e.agent)} finished (${esc(e.status)}) after ${e.steps} steps</span></li>`);
+    }
+  }
+  return `<section class="card" id="timeline"><h2>Timeline: every request and every answer</h2>
+    <p class="small muted">The agent never touches the database or sends anything. It can only ask. Red lines are requests the code refused.</p>
+    <label class="toggle"><input type="checkbox" id="onlyNo"> Show only refusals</label>
+    <div id="tlwrap"><ol class="tl">${items.join("")}</ol></div></section>`;
+}
+
+/* ---------- loading ---------- */
+const runs = (window.RUNS || []).map(r => ({ title: titleOf(r.name), events: r.events, name: r.name }));
+function titleOf(name) {
+  return { "second-rental-example": "Example 1: second rental (A/B test)",
+           "faro-service-recovery-example": "Example 2: service recovery after bad ratings" }[name] || name;
+}
+function show(i) {
+  const r = runs[i];
+  document.querySelectorAll("#picker button").forEach((b, j) => b.setAttribute("aria-pressed", String(j === i)));
+  document.getElementById("loaded").textContent = `Showing: ${r.title}`;
+  render(normalize(r.events, r.name));
+  try { history.replaceState(null, "", "#" + r.name); } catch (_) {}
+}
+function addButtons() {
+  const p = document.getElementById("picker");
+  p.innerHTML = runs.map((r, i) => `<button type="button" data-i="${i}">${esc(r.title)}</button>`).join("");
+  p.querySelectorAll("button").forEach(b => b.addEventListener("click", () => show(+b.dataset.i)));
+}
+function loadText(text, filename) {
+  try {
+    const events = text.split(/\r?\n/).filter(l => l.trim()).map(l => JSON.parse(l));
+    if (!events.some(e => e.kind)) throw new Error("no trace events found");
+    runs.push({ title: `Your run: ${filename}`, events, name: filename });
+    addButtons();
+    show(runs.length - 1);
+  } catch (err) {
+    document.getElementById("loaded").textContent = `Could not read ${filename}: ${err.message}. Expected a trace.jsonl from runs/<run>/.`;
+  }
+}
+const drop = document.getElementById("drop");
+["dragenter", "dragover"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => { const f = e.dataTransfer.files[0]; if (f) f.text().then(t => loadText(t, f.name)); });
+document.getElementById("file").addEventListener("change", e => { const f = e.target.files[0]; if (f) f.text().then(t => loadText(t, f.name)); });
+
+addButtons();
+if (runs.length) {
+  const want = runs.findIndex(r => "#" + r.name === location.hash);
+  show(want >= 0 ? want : 0);
+} else {
+  document.getElementById("loaded").textContent = "No example runs found (docs/data/runs.js is missing). Drop a trace.jsonl above.";
+}
+</script>
+</body>
+</html>
